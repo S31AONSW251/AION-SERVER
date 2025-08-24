@@ -1,63 +1,119 @@
-# server.py
 import os
-from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
-import uvicorn
-import httpx
+import traceback
+from flask import Flask, request, jsonify
+from consciousness_engine import ConsciousnessEngine
 
-app = FastAPI()
+app = Flask(__name__)
 
-# Frontend URL (Vercel) – set via environment variable in Render
-FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://your-vercel-app.vercel.app")
+# Initialize your AI brain
+CONSCIOUS = ConsciousnessEngine()
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[FRONTEND_URL, "http://localhost:3000", "http://127.0.0.1:3000"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# -----------------------------
+# Existing routes (kept intact)
+# -----------------------------
+@app.post("/generate-code")
+def generate_code():
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        prompt = (data.get("prompt") or "").strip()
+        if not prompt:
+            return jsonify({"error": "Missing prompt"}), 400
+        # your code generation logic here
+        result = {"code": f"# generated code for: {prompt}"}
+        return jsonify(result)
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
 
-# Use hosted LLM (OpenAI) or local fallback
-USE_HOSTED = os.environ.get("USE_HOSTED_LLM", "true").lower() in ("1", "true", "yes")
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+@app.post("/generate-image")
+def generate_image():
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        prompt = (data.get("prompt") or "").strip()
+        if not prompt:
+            return jsonify({"error": "Missing prompt"}), 400
+        # your image generation logic here
+        result = {"url": f"https://dummyimage.com/600x400/000/fff&text={prompt}"}
+        return jsonify(result)
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
 
-async def query_openai(prompt: str):
-    """Query OpenAI (or hosted model)"""
-    if not OPENAI_API_KEY:
-        return {"error": "OPENAI_API_KEY not set on server"}
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        r = await client.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers={"Authorization": f"Bearer {OPENAI_API_KEY}"},
-            json={
-                "model": "gpt-4o-mini",
-                "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": 256,
-            },
-        )
-        r.raise_for_status()
-        data = r.json()
-        return {"reply": data["choices"][0]["message"]["content"]}
+@app.post("/api/search")
+def api_search():
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        query = (data.get("query") or "").strip()
+        if not query:
+            return jsonify({"error": "Missing query"}), 400
+        # your search logic here
+        result = {"results": [f"Result 1 for {query}", f"Result 2 for {query}"]}
+        return jsonify(result)
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
 
-@app.post("/ai")
-async def run_ai(request: Request):
-    """Main AI endpoint"""
-    body = await request.json()
-    prompt = body.get("prompt", "")
-    if not prompt:
-        return {"error": "No prompt provided"}
+# -----------------------------
+# Consciousness-related routes
+# -----------------------------
+@app.get("/consciousness/memories")
+def get_memories():
+    try:
+        return jsonify(CONSCIOUS.get_recent_memories())
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
 
-    if USE_HOSTED:
-        return await query_openai(prompt)
-    else:
-        return {"reply": f"(Local AI disabled) Echo: {prompt}"}
+@app.post("/consciousness/reflect")
+def reflect():
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        extra = data.get("prompt_extra") or ""
+        result = CONSCIOUS.reflect_once(prompt_extra=extra)
+        return jsonify(result)
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
 
-@app.get("/health")
-async def health():
-    """Health check endpoint"""
-    return {"status": "ok"}
+# -----------------------------
+# New endpoint for App.js chat
+# -----------------------------
+@app.post("/query")
+def query_route():
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        user_input = (data.get("text") or "").strip()
+        if not user_input:
+            return jsonify({"response": "⚠️ Missing 'text' in request body."}), 400
 
+        # Store memory
+        CONSCIOUS.add_memory(user_input, source="user")
+
+        # Reflect with context
+        result = CONSCIOUS.reflect_once(prompt_extra=f"User said: {user_input}")
+
+        # Extract reply
+        reply = None
+        if isinstance(result, dict):
+            if "insight" in result and isinstance(result["insight"], dict):
+                reply = result["insight"].get("text")
+            elif "error" in result:
+                reply = f"⚠️ Error: {result['error']}"
+        if not reply:
+            reply = "🤖 AION could not generate a proper response."
+
+        # Save reply
+        CONSCIOUS.add_memory(reply, source="assistant")
+
+        return jsonify({"response": reply})
+    except Exception as e:
+        print("[/query] exception:", e)
+        traceback.print_exc()
+        return jsonify({"response": "⚠️ Internal error in /query"}), 500
+
+# -----------------------------
+# Run server
+# -----------------------------
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8000))  # Render sets $PORT
-    uvicorn.run("server:app", host="0.0.0.0", port=port, log_level="info")
+    port = int(os.environ.get("PORT", 8000))
+    app.run(host="0.0.0.0", port=port)
