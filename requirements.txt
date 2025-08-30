@@ -1,4 +1,10 @@
-flask>=3.0.0
-flask-cors>=4.0.0
-gunicorn>=21.2.0
-requests>=2.32.0
+flask
+flask-cors
+requests
+# Optional (only if you will use real Stable Diffusion on your machine):
+diffusers
+torch
+transformers
+accelerate
+safetensors
+apscheduler
